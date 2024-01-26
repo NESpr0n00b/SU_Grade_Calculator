@@ -1,0 +1,194 @@
+<!-- Available si Alyanna Jozeah Ambalong tuod, preferably bright ug 4th year as of 2023 - 2024 -->
+
+<!-- You can add your own CSS or modify some texts to make it more UI friendly and noice to look at -->
+<!-- You can change to create a toggle for other subjects that may need to be excluded in calculations -->
+<!-- Wag lang itake down ang advertisement sa taas -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SU Grade Calculator</title>
+    <style>
+        .summary_label {
+            display: block;
+        }
+        .subject_summary {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h2>SU Grade Calculator</h2>
+    <p>Right-click on the grades page and download through the 'save as' option. Once downloaded, click on the "Upload HTML File" button and select the .html file.</p>
+    <button onclick="uploadFile()">Upload HTML File</button>
+
+    <div id="filter">
+        <p><strong>Select SY and Sem:</strong></p>
+        <div id="sySemFilter">
+            <!--
+                <label class="option_label">
+                    <input type="checkbox" name="sySemCheckbox" value="${sySem}" onchange="applyFilter()" />
+                        Label
+                </label>
+                <label class="option_label">
+                    ...
+                </label>
+                ...
+            -->
+        </div>
+        <p><strong>Include NSTP subjects:</strong></p>
+        <label class="nstp_label">
+            <input type="checkbox" name="nstpSubjectsCheckbox" onchange="applyFilter()" />
+            Include nstp subjects
+        </label>
+    </div>
+    
+    <div id="cqpa">
+        <!--
+            <span id="CQPA_text">CQPA:</span><span id="CQPA_grade">4.00</span>
+        -->
+    </div>
+    <div id="summary">
+        <!--
+            <h3>Summary:</h3>
+            <p class="subject_summary">Subject Name (Number of Units) - Final Grade: 4.0</p>
+            <p class="subject_summary">Subject Name (Number of Units) - Final Grade: 4.0</p>
+            ...
+
+            --------
+            OR, if the HTML File is invalid
+            --------
+
+            <h3>Invalid HTML File</h3>
+        -->
+    </div>
+
+
+    <script>
+        let tables = [];
+        let nstpTable = [];
+
+        function parseHTML(filepath) {
+            let fileReader = new FileReader();
+            fileReader.onload = function (e) {
+                let fileContent = e.target.result;
+                let parser = new DOMParser();
+                let htmlDoc = parser.parseFromString(fileContent, "text/html");
+                let table = htmlDoc.querySelector("table");
+                if (table) {
+                    let rows = table.querySelectorAll("tr");
+                    let data = [];
+                    let nstpData = [];
+                    for (let i = 0; i < rows.length; i++) {
+                        let cells = rows[i].querySelectorAll("td");
+                        let row_data = Array.from(cells).map(cell => cell.textContent.trim());
+                        if (row_data.length > 6 && row_data[6] && parseFloat(row_data[6])) {
+                            if (row_data[2].toLowerCase().includes("nstp")) {
+                                nstpData.push(row_data);
+                            } else {
+                                data.push(row_data);
+                            }
+                        }
+                    }
+                    let columns = ["SY", "Sem", "Subject", "Description", "Units", "Midterm", "Final"];
+                    let df = data.map(row => Object.fromEntries(row.map((value, index) => [columns[index], value])));
+                    tables.push(df);
+
+                    if (nstpData.length > 0) {
+                        let nstpDF = nstpData.map(row => Object.fromEntries(row.map((value, index) => [columns[index], value])));
+                        nstpTable.push(nstpDF);
+                    }
+
+                    updateFilterUI();
+                    calculateCQPA();
+                } else {
+                    document.getElementById("summary").innerHTML = `<h3>Invalid HTML File</h3>`;
+                }
+            };
+            fileReader.readAsText(filepath);
+        }
+
+        function uploadFile() {
+            let input = document.createElement("input");
+            input.type = "file";
+            input.accept = ".html";
+            input.onchange = function (e) {
+                let file = e.target.files[0];
+                if (file) {
+                    parseHTML(file);
+                }
+            };
+            input.click();
+        }
+
+        function updateFilterUI() {
+            let sySemFilterDiv = document.getElementById("sySemFilter");
+
+            let uniqueSYSem = Array.from(new Set(tables.flatMap(table => table.map(row => row.SY + " - " + row.Sem))));
+
+            let sySemFilterHTML = uniqueSYSem.map(sySem => `<label class="option_label"><input type="checkbox" name="sySemCheckbox" value="${sySem}" onchange="applyFilter()" /> ${sySem}</label>`).join('');
+
+            sySemFilterDiv.innerHTML = sySemFilterHTML;
+        }
+
+        function applyFilter() {
+            let selectedSYSem = Array.from(document.querySelectorAll("input[name='sySemCheckbox']:checked")).map(checkbox => checkbox.value);
+            let includenstp = document.querySelector("input[name='nstpSubjectsCheckbox']").checked;
+
+            let filteredTables = tables.flatMap(table => table);
+
+            if (selectedSYSem.length > 0) {
+                filteredTables = filteredTables.filter(row => {
+                    let sySem = row.SY + " - " + row.Sem;
+                    return selectedSYSem.includes(sySem);
+                });
+            }
+
+            if (!includenstp) {
+                filteredTables = filteredTables.filter(row => {
+                    let subject = row.Subject.toLowerCase();
+                    return !subject.includes("nstp");
+                });
+            }
+
+            if (includenstp && nstpTable.length > 0) {
+                let selectednstpTables = nstpTable.flatMap(table => table).filter(row => {
+                    let sySem = row.SY + " - " + row.Sem;
+                    return selectedSYSem.includes(sySem);
+                });
+                filteredTables = filteredTables.concat(selectednstpTables);
+            }
+
+            displayCQPA(filteredTables);
+        }
+
+        function calculateCQPA() {
+            let filteredTables = tables.flatMap(table => table);
+
+            let includenstp = document.querySelector("input[name='nstpSubjectsCheckbox']").checked;
+
+            if (includenstp && nstpTable.length > 0) {
+                filteredTables = filteredTables.concat(nstpTable.flatMap(table => table));
+            }
+
+            displayCQPA(filteredTables);
+        }
+
+        function displayCQPA(table) {
+            let cqpaDiv = document.getElementById("cqpa");
+            let summaryDiv = document.getElementById("summary");
+            let unitsSum = table.reduce((sum, row) => sum + parseFloat(row.Units), 0);
+            let gradeSum = table.reduce((sum, row) => sum + (parseFloat(row.Final) * parseFloat(row.Units)), 0);
+            let cqpa = gradeSum / unitsSum;
+            cqpaDiv.innerHTML = `<span id="CQPA_text">CQPA:</span><span id="CQPA_grade">${cqpa.toFixed(2)}</span>`;
+
+            // Clear the summaryDiv
+            summaryDiv.innerHTML = "";
+
+            let summaryHTML = table.map(row => `<p class="subject_summary">${row.Subject} (${row.Units}) - Final Grade: ${row.Final}</p>`).join('');
+            summaryDiv.innerHTML = `<h3>Summary:</h3>${summaryHTML}`;
+        }
+
+    </script>
+</body>
+</html>
